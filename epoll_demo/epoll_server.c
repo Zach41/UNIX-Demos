@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <strings.h>
 
 #include <netinet/in.h>
 #include <unistd.h>
@@ -13,18 +14,19 @@
 #define MAXSIZE      1024
 #define LISTENQ      20
 #define EPOLLEVENTS  100
+#define FDSIZE       1024
 
 static int socket_bind(const char* ip, int port);
 static void do_epoll(int listenfd);
 static void handle_events(int epollfd, struct epoll_event *events, int num, int listenfd, char *buf);
-static void handle_accept(int epollfd, listenfd);    
+static void handle_accept(int epollfd, int listenfd);    
 static void do_read(int epollfd, int fd, char *buf);
 static void do_write(int epollfd, int fd, char *buf);
 static void add_event(int epollfd, int fd, int state);
 static void modify_event(int epollfd, int fd, int state);
 static void delete_event(int epollfd, int fd, int state);
 
-int main(void) {
+int main(void) {    
     int listenfd = socket_bind(IPADDRESS, PORT);
     listen(listenfd, LISTENQ);
     do_epoll(listenfd);
@@ -42,7 +44,7 @@ static int socket_bind(const char *ip, int port) {
     bzero(&server_addr, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
-    server_addr.sin_addr = INADDR_ANY;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(listenfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
 	perror("bind socket error");
@@ -62,7 +64,7 @@ static void do_epoll(int listenfd) {
 	perror("create epoll error");
 	exit(-1);
     }
-    add_event(epoll_fd, listenfd, EPOLLIN);
+    add_event(epollfd, listenfd, EPOLLIN);
 
     int ret;
     for (;;) {
@@ -78,7 +80,7 @@ static void do_epoll(int listenfd) {
 
 static void handle_events(int epollfd, struct epoll_event *events, int num, int listenfd, char *buf) {
     int fd;
-    for (i = 0; i<num; i++) {
+    for (int i = 0; i<num; i++) {
 	fd = events[i].data.fd;
 	if (fd == listenfd && (events[i].events & EPOLLIN))
 	    handle_accept(epollfd, listenfd);
@@ -93,11 +95,9 @@ static void handle_accept(int epollfd, int listenfd) {
     struct sockaddr_in cli_addr;
     int cli_size = 0;
     int clifd;
-
     if ((clifd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_size)) < 0) {
 	perror("accept error");
     } else {
-	printf("accept a new client: %s:%d\n", inet_ntop(cli_addr.sin_addr), cli_addr.sin_port);
 	add_event(epollfd, clifd, EPOLLIN);
     }    
 }

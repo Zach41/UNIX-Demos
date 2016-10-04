@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <strings.h>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -13,11 +14,12 @@
 #define MAXSIZE      1024
 #define LISTENQ      20
 #define EPOLLEVENTS  100
+#define FDSIZE       1024
 
 static void handle_connection(int sockfd);
 static void handle_events(int pollfd, struct epoll_event *events, int num, int sockfd, char *buf);
-static do_read(int epollfd, int fd, int sockfd, char *buf);
-static do_write(int epollfd, int fd, int sockfd, char *buf);
+static void do_read(int epollfd, int fd, int sockfd, char *buf);
+static void do_write(int epollfd, int fd, int sockfd, char *buf);
 static void add_event(int epollfd, int fd, int state);
 static void modify_event(int epollfd, int fd, int state);
 static void delete_event(int epollfd, int fd, int state);
@@ -41,13 +43,14 @@ int main(void) {
 	perror("inet_pton error");
 	exit(-1);
     }
-
+    connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    
     handle_connection(sockfd);
     close(sockfd);
     return 0;
 }
 
-static handle_connection(int sockfd) {
+static void handle_connection(int sockfd) {
     int epollfd;
     struct epoll_event events[EPOLLEVENTS];
     char buf[MAXSIZE];
@@ -57,7 +60,7 @@ static handle_connection(int sockfd) {
 	perror("create epoll error");
 	exit(-1);
     }
-    add_event(epollfd, sockfd, EPOLLIN);
+    add_event(epollfd, STDIN_FILENO, EPOLLIN);
 
     int ret;
     for (;;) {
@@ -70,20 +73,10 @@ static void handle_events(int epollfd, struct epoll_event *events, int num, int 
     int fd;
     for (int i=0; i<num; i++) {
 	fd = events[i].data.fd;
-	if (fd == sockfd && events[i].events & EPOLLIN) {
-	    if (!conn_flag) {
-		conn_flag = 1;
-		add_event(epollfd, STDIN_FILENO, EPOLLIN);
-	    } else {
-		do_read(epollfd, sockfd, sockfd, buf);
-	    }	 
-	} else if (fd == STDIN_FILENO && events[i].events & EPOLLIN) {
+	if (events[i].events & EPOLLIN)
 	    do_read(epollfd, fd, sockfd, buf);
-	} else if (fd == STDOUT_FILENO && events[i].events & EPOLLOUT) {
+	else if (events[i].events & EPOLLOUT)
 	    do_write(epollfd, fd, sockfd, buf);
-	} else if (fd == sockfd && events[i].events & EPOLLOUT) {
-	    do_write(epollfd, sockfd, sockfd, buf);		
-	}
     }
 }
 
@@ -99,8 +92,8 @@ static void do_read(int epollfd, int fd, int sockfd, char *buf) {
 	if (fd == STDIN_FILENO) {
 	    add_event(epollfd, sockfd, EPOLLOUT);
 	} else {
-	    printf("message from server: %s\n", buf);
-	    modify_event(epollfd, fd, EPOLLOUT);
+	    delete_event(epollfd, sockfd, EPOLLIN);
+	    add_event(epollfd, STDOUT_FILENO, EPOLLOUT);
 	}
     }
 }
@@ -114,7 +107,7 @@ static void do_write(int epollfd, int fd, int sockfd, char *buf) {
 	if (fd == STDOUT_FILENO) {
 	    delete_event(epollfd, fd, EPOLLOUT);	    
 	} else {
-	    modify_event(epollfd, sockfd, EPOLLOUT);
+	    modify_event(epollfd, fd, EPOLLIN);
 	}
     }
     memset(buf, 0, MAXSIZE);
