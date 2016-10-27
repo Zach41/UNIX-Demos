@@ -3,4 +3,6 @@
 
 int makethread(void *(*fn)(void *), void *arg, pthread_t *tidp);
 
+char *getenv_(const char *name);
+
 #endif /* PTHREAD_FUNCTIONS_H */
