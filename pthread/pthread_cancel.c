@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 void cleanup(void *arg) {
     char *msg = (char *)arg;
@@ -18,16 +19,20 @@ void *thr_fn1(void *arg) {
     pthread_cleanup_push(cleanup, "first cleanup");
     pthread_cleanup_push(cleanup, "second cleanup");
     /* must put this after cleanup push so cleanup can be executed */
-    sleep(30);
-    /* pthread_testcancel(); */
-    pthread_exit((void *)0);
+    for (time_t t = time(NULL); t+5 > time(NULL); )
+    	continue;
+    pthread_testcancel();
+    if (arg)
+	return (void *)0;
 
     pthread_cleanup_pop(0);
     pthread_cleanup_pop(0);
+
+    return (void *)0;
 }
 
 void *thr_fn2(void *arg) {
-    sleep(5);
+    sleep(2);
 
     pthread_t tid2cancel = (pthread_t)arg;
     
@@ -48,13 +53,18 @@ int main(void) {
     err = pthread_attr_init(&attr);
     err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     
-    err = pthread_create(&tid1, &attr, thr_fn1, NULL);
+    err = pthread_create(&tid1, NULL, thr_fn1, NULL);
     err = pthread_create(&tid2, &attr, thr_fn2, (void *)tid1);
 
     pthread_attr_destroy(&attr);
 
-    while (1)
-	;
+    void *tret;
+    err = pthread_join(tid1, &tret);
+    if (tret == PTHREAD_CANCELED) {
+	printf("thread 1 is canceled\n");
+    } else {
+	printf("some error occurred\n");
+    }
 
     return 0;
 }
